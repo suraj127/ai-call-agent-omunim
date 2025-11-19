@@ -319,10 +319,12 @@ const App: React.FC = () => {
                         <div className="animate-in fade-in duration-300">
                             <div className="flex items-center justify-center gap-2 mb-4">
                                 <span className="relative flex h-3 w-3">
-                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
                                 </span>
-                                <span className="text-red-400 font-bold tracking-wide">AI LISTENING & SPEAKING</span>
+                                <span className="text-green-400 font-bold tracking-wide text-xs md:text-sm">
+                                  AI LISTENING - WAITING FOR "HELLO"
+                                </span>
                             </div>
 
                             <div className="h-32 flex items-center justify-center mb-4 relative">
@@ -333,7 +335,10 @@ const App: React.FC = () => {
                                 />
                                 {dialerOpen && (
                                     <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[1px] rounded-lg">
-                                        <p className="text-xs font-bold text-white bg-black/50 px-2 py-1 rounded">Return to App to see Viz</p>
+                                        <div className="bg-black/70 px-4 py-2 rounded text-center">
+                                            <p className="text-xs font-bold text-white">AI will auto-start when</p>
+                                            <p className="text-xs text-yellow-400">customer speaks</p>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -358,7 +363,7 @@ const App: React.FC = () => {
                             {dialerOpen && (
                                 <div className="mt-3 p-2 bg-blue-500/10 border border-blue-500/30 rounded text-center">
                                     <p className="text-xs text-blue-200">
-                                        Currently Dialing. Ensure phone is on <span className="font-bold text-white">SPEAKER</span>.
+                                        Dialing... AI is silent until pickup.
                                     </p>
                                 </div>
                             )}
