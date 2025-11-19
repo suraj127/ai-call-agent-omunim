@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useCallback } from 'react';
 import { useGeminiLive, LiveStatus, DemoBooking } from './hooks/useGeminiLive';
 import Visualizer from './components/Visualizer';
-import { SYSTEM_INSTRUCTION } from './constants';
 
 // --- Types ---
 interface Lead {
@@ -21,7 +21,6 @@ const TrashIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 
 const CalendarIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M6.75 2.25a.75.75 0 0 1 .75.75v1.5h9v-1.5a.75.75 0 0 1 1.5 0v1.5h.75a3 3 0 0 1 3 3v2.5h-18v-2.5a3 3 0 0 1 3-3h.75v-1.5a.75.75 0 0 1 .75-.75ZM1.5 11.25v7.5a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3v-7.5H1.5Zm4.5 3a.75.75 0 0 1 .75.75v.005a.75.75 0 0 1-1.5 0v-.005a.75.75 0 0 1 .75-.75Zm3.75 0a.75.75 0 0 1 .75.75v.005a.75.75 0 0 1-1.5 0v-.005a.75.75 0 0 1 .75-.75Zm3.75 0a.75.75 0 0 1 .75.75v.005a.75.75 0 0 1-1.5 0v-.005a.75.75 0 0 1 .75-.75Zm3.75 0a.75.75 0 0 1 .75.75v.005a.75.75 0 0 1-1.5 0v-.005a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" /></svg>;
 const XMarkIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>;
 const DownloadIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75Zm-9 13.5a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h13.5a1.5 1.5 0 0 0 1.5-1.5V16.5a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3H5.25a3 3 0 0 1-3-3V16.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" /></svg>;
-const AlertIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-red-500"><path fillRule="evenodd" d="M9.401 3.003c1.155-2 4.043-2 5.197 0l7.355 12.748c1.154 2-.29 4.5-2.599 4.5H4.645c-2.309 0-3.752-2.5-2.598-4.5L9.4 3.003ZM12 8.25a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V9a.75.75 0 0 1 .75-.75Zm0 8.25a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" clipRule="evenodd" /></svg>;
 
 const App: React.FC = () => {
   // --- State ---
@@ -48,9 +47,7 @@ const App: React.FC = () => {
   // --- Effects ---
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
-      // Prevent the mini-infobar from appearing on mobile
       e.preventDefault();
-      // Stash the event so it can be triggered later.
       setDeferredPrompt(e);
     };
 
@@ -61,15 +58,33 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // --- Callback for when AI books a demo ---
-  const handleBooking = (newBooking: DemoBooking) => {
+  // --- Callback for when Agent books a demo ---
+  const handleBooking = useCallback((newBooking: DemoBooking) => {
+      // Enrich booking with lead data
+      // Note: Since this callback is stable, we use functional state update to access latest bookings,
+      // but for activeLead we rely on the booking data passed from the tool or ref if needed.
+      // To keep it simple and avoid closing over stale 'activeLead', the hook passes what it knows.
+      // If we need activeLead info, we can grab it from current state if we include it in deps, 
+      // but to keep 'connect' stable we avoid changing deps. 
+      // Strategy: The booking object from the hook already has customerName if the model extracted it.
+      // If we want to force the active lead name, we can do it here but we need to be careful about deps.
+      
       setBookings(prev => {
           const updated = [newBooking, ...prev];
           localStorage.setItem('om_bookings', JSON.stringify(updated));
           return updated;
       });
 
-      // Auto-update lead status
+      // We need to know which lead ID to update. 
+      // Since we can't easily pass ID through the voice tool unless we add it to context,
+      // we'll trust the user is on the active lead page.
+      // To access 'activeLeadId' without breaking stability, we can use a ref or just accept that
+      // if activeLeadId changes, the callback changes, and we reconnect.
+      // For now, let's allow the callback to change when activeLeadId changes. 
+      // The hook handles ref updates so it won't break connection.
+      
+      // Actually, looking at useGeminiLive implementation, it uses a Ref for onBooking.
+      // So we can safely depend on activeLeadId here without breaking the socket.
       if (activeLeadId) {
           setLeads(prev => {
               const updated = prev.map(l => {
@@ -80,7 +95,7 @@ const App: React.FC = () => {
               return updated;
           });
       }
-  };
+  }, [activeLeadId]); // This dependency is safe because useGeminiLive wraps this in a Ref.
 
   const { status, connect, disconnect, isSpeaking, audioLevel, error } = useGeminiLive({
       onBooking: handleBooking
@@ -130,17 +145,11 @@ const App: React.FC = () => {
 
   const handleStartAI = () => {
     if (!activeLead) return;
-    // Clean up previous session if any (status check)
     if (status !== LiveStatus.DISCONNECTED) {
         disconnect();
     }
-    
-    const instructionOverride = `${SYSTEM_INSTRUCTION}\n\nCONTEXT: You are currently speaking to a customer with phone number ${activeLead.phone}. The name on record is "${activeLead.name}".`;
-    
-    // Short delay to ensure cleanup finishes if we just disconnected
-    setTimeout(() => {
-        connect({ systemInstruction: instructionOverride });
-    }, 100);
+    // Start immediately
+    connect();
   };
 
   const handleNextLead = () => {
@@ -316,22 +325,22 @@ const App: React.FC = () => {
 
                 {/* STEP 2 */}
                 <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
-                    <div className="text-xs text-slate-500 uppercase font-bold mb-3 tracking-wider">Step 2: Connect Agent</div>
+                    <div className="text-xs text-slate-500 uppercase font-bold mb-3 tracking-wider">Step 2: Start Agent</div>
                     
                     {status === LiveStatus.CONNECTED || status === LiveStatus.CONNECTING ? (
                         <button 
                           onClick={disconnect}
                           className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-4 rounded-lg shadow-lg flex flex-col items-center justify-center gap-2 active:scale-95 transition-transform"
                         >
-                          <span>End AI Session</span>
-                          <span className="text-[10px] font-normal opacity-80">Does not hang up phone call</span>
+                          <span>Stop Agent</span>
+                          <span className="text-[10px] font-normal opacity-80">Tap to end conversation</span>
                         </button>
                     ) : (
                         <button 
                           onClick={handleStartAI}
                           className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-bold py-4 rounded-lg shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95"
                         >
-                           <MicIcon /> Start AI Script
+                           <MicIcon /> Connect AI Agent
                         </button>
                     )}
 
@@ -343,8 +352,8 @@ const App: React.FC = () => {
                         />
                     </div>
                     <div className="text-center text-xs text-slate-400 mt-[-10px] h-4">
-                        {status === LiveStatus.CONNECTING && "Connecting..."}
-                        {status === LiveStatus.CONNECTED && (isSpeaking ? "Priya is speaking..." : "Listening...")}
+                        {status === LiveStatus.CONNECTING && "Connecting to Gemini Live..."}
+                        {status === LiveStatus.CONNECTED && (isSpeaking ? "Agent Speaking..." : "Listening...")}
                     </div>
                 </div>
 
@@ -364,46 +373,18 @@ const App: React.FC = () => {
              <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
                 <PhoneIcon />
              </div>
-             <h3 className="text-xl font-semibold text-slate-300 mb-2">Power Dialer Ready</h3>
-             <p className="max-w-xs mx-auto text-sm">Select a lead from the sidebar to start the assisted calling workflow.</p>
+             <h3 className="text-xl font-semibold text-slate-300 mb-2">Offline Sales Agent</h3>
+             <p className="max-w-xs mx-auto text-sm">Select a lead from the sidebar to start the automated script workflow.</p>
           </div>
         )}
 
-        {/* Error Toast (Generic) */}
-        {error && error !== 'API_KEY_MISSING' && (
+        {/* Error Toast */}
+        {error && (
           <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-6 py-3 rounded-full shadow-lg text-sm font-bold animate-bounce w-max max-w-[90%] text-center z-50">
             {error}
           </div>
         )}
         
-        {/* API Key Error Modal */}
-        {error === 'API_KEY_MISSING' && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur">
-             <div className="bg-slate-900 border border-red-500/50 w-full max-w-md rounded-xl shadow-2xl p-6 text-center">
-                <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                   <AlertIcon />
-                </div>
-                <h2 className="text-xl font-bold text-white mb-2">Setup Required</h2>
-                <p className="text-slate-400 text-sm mb-6">
-                  The AI Agent needs a valid Google Gemini API Key to function.
-                </p>
-                
-                <div className="bg-slate-800 p-4 rounded text-left text-xs text-slate-300 space-y-2 mb-6">
-                   <p className="font-bold text-white">How to fix on Vercel:</p>
-                   <ol className="list-decimal list-inside space-y-1">
-                     <li>Go to your Vercel Dashboard</li>
-                     <li>Select this project</li>
-                     <li>Go to <strong>Settings</strong> &gt; <strong>Environment Variables</strong></li>
-                     <li>Add Key: <code className="text-yellow-500">API_KEY</code></li>
-                     <li>Add Value: <em>Your Gemini API Key</em></li>
-                     <li>Redeploy the app</li>
-                   </ol>
-                </div>
-                <button onClick={() => window.location.reload()} className="bg-slate-700 hover:bg-slate-600 text-white py-2 px-6 rounded-full text-sm font-bold">Refresh App</button>
-             </div>
-          </div>
-        )}
-
       </main>
 
       {/* --- BOOKINGS MODAL --- */}

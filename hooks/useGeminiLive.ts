@@ -1,7 +1,8 @@
+
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
-import { createBlob, decode, decodeAudioData } from '../utils/audioUtils';
-import { MODEL_NAME, SYSTEM_INSTRUCTION, VOICE_NAME, BOOK_DEMO_TOOL } from '../constants';
+import { GoogleGenAI, LiveServerMessage, Modality, Type } from "@google/genai";
+import { SYSTEM_INSTRUCTION } from '../constants';
+import { createBlob, decodeAudioData, decode } from '../utils/audioUtils';
 
 export enum LiveStatus {
   DISCONNECTED = 'disconnected',
@@ -18,314 +19,282 @@ export interface DemoBooking {
   timestamp: string;
 }
 
-export interface ConnectOptions {
-    systemInstruction?: string;
-}
-
 interface UseGeminiLiveProps {
     onBooking?: (booking: DemoBooking) => void;
 }
 
 interface UseGeminiLiveReturn {
   status: LiveStatus;
-  connect: (options?: ConnectOptions) => Promise<void>;
+  connect: () => Promise<void>;
   disconnect: () => void;
   isSpeaking: boolean;
-  audioLevel: number; // For visualizer (0-1)
+  audioLevel: number;
   error: string | null;
 }
-
-// Helper to safely get API Key
-const getApiKey = () => {
-  try {
-    // Priority 1: Environment Variable (Best Practice for Production)
-    if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
-      return process.env.API_KEY;
-    }
-  } catch (e) {
-    // Ignore env errors
-  }
-  // Priority 2: Fallback to user-provided key for immediate demo use
-  return "AIzaSyCPpq0DbrvMRG8h2YotctMeVEdFsmUfM-U";
-};
 
 export const useGeminiLive = ({ onBooking }: UseGeminiLiveProps = {}): UseGeminiLiveReturn => {
   const [status, setStatus] = useState<LiveStatus>(LiveStatus.DISCONNECTED);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
   const [error, setError] = useState<string | null>(null);
-
-  // Refs for audio context and processing
-  const inputAudioContextRef = useRef<AudioContext | null>(null);
-  const outputAudioContextRef = useRef<AudioContext | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  // We store the promise here to use in callbacks, avoiding top-level await blocking
-  const sessionPromiseRef = useRef<Promise<any> | null>(null);
-  const nextStartTimeRef = useRef<number>(0);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
-  const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   
-  // Keep latest ref of callback to avoid reconnection on prop change
+  // Audio & API Refs
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const inputAnalyserRef = useRef<AnalyserNode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const nextStartTimeRef = useRef<number>(0);
+  const sourceNodesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const animationFrameRef = useRef<number | null>(null);
+  
+  // Stable ref for callback to avoid effect re-runs
   const onBookingRef = useRef(onBooking);
   useEffect(() => {
       onBookingRef.current = onBooking;
   }, [onBooking]);
 
-  const cleanup = useCallback(() => {
-    if (sessionPromiseRef.current) {
-       sessionPromiseRef.current.then(session => {
-           try { session.close(); } catch(e) { console.error("Error closing session", e); }
-       }).catch(() => {});
-       sessionPromiseRef.current = null;
+  // Helper to manage audio visualization
+  const visualize = useCallback(() => {
+    if (!inputAnalyserRef.current || status !== LiveStatus.CONNECTED) {
+       if (isSpeaking) {
+          // Simulated level for output if we aren't analyzing output stream directly
+          setAudioLevel(prev => Math.max(0.2, Math.min(0.8, prev + (Math.random() - 0.5) * 0.2)));
+          animationFrameRef.current = requestAnimationFrame(visualize);
+       } else {
+          setAudioLevel(0.05);
+          animationFrameRef.current = requestAnimationFrame(visualize);
+       }
+       return;
     }
 
+    const dataArray = new Uint8Array(inputAnalyserRef.current.frequencyBinCount);
+    inputAnalyserRef.current.getByteFrequencyData(dataArray);
+    
+    let sum = 0;
+    const len = dataArray.length;
+    for (let i = 0; i < len; i++) {
+      sum += dataArray[i];
+    }
+    const average = sum / len;
+    // Normalize roughly 0-1
+    setAudioLevel(average / 128); 
+    animationFrameRef.current = requestAnimationFrame(visualize);
+  }, [isSpeaking, status]);
+
+  const disconnect = useCallback(() => {
+    // Stop all playing sources
+    sourceNodesRef.current.forEach(source => {
+        try { source.stop(); } catch(e) {}
+    });
+    sourceNodesRef.current.clear();
+
+    // Stop mic stream
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
+        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
     }
 
-    if (inputAudioContextRef.current) {
-      try { inputAudioContextRef.current.close(); } catch(e) {}
-      inputAudioContextRef.current = null;
-    }
-
-    if (outputAudioContextRef.current) {
-      try { outputAudioContextRef.current.close(); } catch(e) {}
-      outputAudioContextRef.current = null;
+    // Close Audio Context
+    if (audioContextRef.current) {
+        try { audioContextRef.current.close(); } catch(e) {}
+        audioContextRef.current = null;
     }
 
     if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
+        cancelAnimationFrame(animationFrameRef.current);
     }
-    
-    sourcesRef.current.forEach(source => {
-        try { source.stop(); } catch(e) {}
-    });
-    sourcesRef.current.clear();
 
+    setStatus(LiveStatus.DISCONNECTED);
     setIsSpeaking(false);
     setAudioLevel(0);
   }, []);
 
-  const visualize = useCallback(() => {
-    if (!analyserRef.current) return;
-    
-    const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-    analyserRef.current.getByteFrequencyData(dataArray);
-    
-    // Calculate average volume
-    let sum = 0;
-    for (let i = 0; i < dataArray.length; i++) {
-      sum += dataArray[i];
-    }
-    const average = sum / dataArray.length;
-    setAudioLevel(average / 128); // Normalize somewhat
-
-    animationFrameRef.current = requestAnimationFrame(visualize);
-  }, []);
-
-  const connect = useCallback(async (options?: ConnectOptions) => {
-    // Cleanup any existing session first
-    cleanup();
+  const connect = useCallback(async () => {
+    setStatus(LiveStatus.CONNECTING);
+    setError(null);
 
     try {
-      setStatus(LiveStatus.CONNECTING);
-      setError(null);
+        // 1. Initialize Audio Context
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        // Request 16kHz for input to match Gemini defaults if possible
+        const audioContext = new AudioContextClass({ sampleRate: 16000 }); 
+        await audioContext.resume();
+        audioContextRef.current = audioContext;
+        
+        // Output context for playing audio (Gemini usually sends 24kHz)
+        const outputAudioContext = new AudioContextClass({ sampleRate: 24000 });
+        await outputAudioContext.resume();
+        
+        // 2. Get User Media (Mic)
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        streamRef.current = stream;
 
-      const apiKey = getApiKey();
-      if (!apiKey) {
-         // Return a specific error code that App.tsx can detect to show instructions
-         throw new Error("API_KEY_MISSING");
-      }
+        // Visualizer Setup
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        inputAnalyserRef.current = analyser;
+        
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser); // Connect mic to analyser
 
-      const ai = new GoogleGenAI({ apiKey });
+        // 3. Connect to Gemini Live API
+        // Safely access process.env to avoid crashes in strict browser environments
+        const apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
+        if (!apiKey) {
+            throw new Error("API_KEY not found in environment");
+        }
 
-      // Setup Audio Contexts
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      
-      // Note: Some browsers might not support 16000 natively, but we request it.
-      const inputAudioContext = new AudioContextClass({ sampleRate: 16000 });
-      const outputAudioContext = new AudioContextClass({ sampleRate: 24000 });
-      
-      // CRITICAL: Resume contexts immediately (needed for some browsers)
-      await inputAudioContext.resume();
-      await outputAudioContext.resume();
+        const ai = new GoogleGenAI({ apiKey });
+        
+        // Define Tools
+        const bookDemoTool = {
+            functionDeclarations: [{
+                name: 'bookDemo',
+                description: 'Book a software demo when the user agrees and provides a preferred time.',
+                parameters: {
+                    type: Type.OBJECT,
+                    properties: {
+                        scheduledTime: { type: Type.STRING, description: "The time the user wants the demo (e.g., 'Tomorrow 10 AM', 'Evening')." },
+                        customerName: { type: Type.STRING, description: "The name of the customer if mentioned." }
+                    },
+                    required: ['scheduledTime']
+                }
+            }]
+        };
 
-      inputAudioContextRef.current = inputAudioContext;
-      outputAudioContextRef.current = outputAudioContext;
-
-      // Setup Analyser for Visualizer (Monitor Output)
-      const analyser = outputAudioContext.createAnalyser();
-      analyser.fftSize = 256;
-      analyserRef.current = analyser;
-      
-      // Get Microphone Stream
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-
-      // Connect to Gemini Live
-      const sessionPromise = ai.live.connect({
-        model: MODEL_NAME,
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE_NAME } },
-          },
-          systemInstruction: options?.systemInstruction || SYSTEM_INSTRUCTION,
-          tools: [{ functionDeclarations: [BOOK_DEMO_TOOL] }],
-        },
-        callbacks: {
-          onopen: () => {
-            console.log('Gemini Live Connection Opened');
-            setStatus(LiveStatus.CONNECTED);
-            visualize(); // Start visualizer
-
-            if (!inputAudioContextRef.current || !streamRef.current) return;
-
-            // Stream audio from the microphone to the model
-            const source = inputAudioContext.createMediaStreamSource(streamRef.current);
-            const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
-            
-            scriptProcessor.onaudioprocess = (e) => {
-              if (!inputAudioContextRef.current) return; // Guard against cleanup
-              
-              const inputData = e.inputBuffer.getChannelData(0);
-              const pcmBlob = createBlob(inputData);
-              
-              // Send data only when session is ready
-              sessionPromise.then((session) => {
-                session.sendRealtimeInput({ media: pcmBlob });
-              }).catch(err => {
-                  // Suppress errors during shutdown/network issues to prevent spam
-              });
-            };
-
-            // Connect inputs
-            source.connect(scriptProcessor);
-            
-            // CRITICAL: Connect script processor to a silence node (mute)
-            // This keeps the processor running but prevents audio feedback (echo)
-            const silenceNode = inputAudioContext.createGain();
-            silenceNode.gain.value = 0;
-            scriptProcessor.connect(silenceNode);
-            silenceNode.connect(inputAudioContext.destination);
-          },
-          onmessage: async (message: LiveServerMessage) => {
-             // Handle Function Calling
-             if (message.toolCall) {
-                const functionResponses = [];
-                for (const fc of message.toolCall.functionCalls) {
-                    if (fc.name === BOOK_DEMO_TOOL.name) {
-                        const args = fc.args as any;
-                        console.log("Tool called:", fc.name, args);
+        const sessionPromise = ai.live.connect({
+            model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+            config: {
+                responseModalities: [Modality.AUDIO],
+                systemInstruction: SYSTEM_INSTRUCTION,
+                speechConfig: {
+                    // Use 'Zephyr' or 'Puck' for reliable voice generation
+                    voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } }
+                },
+                tools: [bookDemoTool]
+            },
+            callbacks: {
+                onopen: () => {
+                    setStatus(LiveStatus.CONNECTED);
+                    visualize(); // Start visualizing
+                    
+                    // Process Mic Audio -> Gemini
+                    const scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+                    scriptProcessor.onaudioprocess = (e) => {
+                        const inputData = e.inputBuffer.getChannelData(0);
+                        const pcmBlob = createBlob(inputData);
                         
-                        const newBooking: DemoBooking = {
-                            id: crypto.randomUUID(),
-                            scheduledTime: args.scheduledTime,
-                            customerName: args.customerName || "Unknown Customer",
-                            notes: args.notes,
-                            timestamp: new Date().toLocaleString(),
+                        sessionPromise.then(session => {
+                            session.sendRealtimeInput({ media: pcmBlob });
+                        });
+                    };
+                    
+                    source.connect(scriptProcessor);
+                    scriptProcessor.connect(audioContext.destination);
+
+                    // IMMEDIATE START TRIGGER: Send silence to establish stream
+                    // We rely on System Instruction to make the model speak first, 
+                    // but sending an input (even silence) often wakes up the session processing.
+                    // Added small delay to ensure socket is fully stable.
+                    setTimeout(() => {
+                        sessionPromise.then(session => {
+                             const silence = new Float32Array(1600); // ~0.1s silence
+                             const pcmBlob = createBlob(silence);
+                             session.sendRealtimeInput({ media: pcmBlob });
+                        });
+                    }, 100);
+                },
+                onmessage: async (message: LiveServerMessage) => {
+                    // Handle Audio Output
+                    const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+                    if (base64Audio) {
+                        setIsSpeaking(true);
+                        
+                        // Sync playback time
+                        nextStartTimeRef.current = Math.max(nextStartTimeRef.current, outputAudioContext.currentTime);
+
+                        const audioBuffer = await decodeAudioData(
+                            decode(base64Audio),
+                            outputAudioContext,
+                            24000,
+                            1
+                        );
+
+                        const sourceNode = outputAudioContext.createBufferSource();
+                        sourceNode.buffer = audioBuffer;
+                        sourceNode.connect(outputAudioContext.destination);
+                        
+                        sourceNode.onended = () => {
+                            sourceNodesRef.current.delete(sourceNode);
+                            if (sourceNodesRef.current.size === 0) {
+                                setIsSpeaking(false);
+                            }
                         };
                         
-                        // Trigger callback to parent
-                        if (onBookingRef.current) {
-                            onBookingRef.current(newBooking);
-                        }
-
-                        functionResponses.push({
-                            id: fc.id,
-                            name: fc.name,
-                            response: { result: "Demo scheduled successfully. Confirm this to the user." }
-                        });
+                        sourceNode.start(nextStartTimeRef.current);
+                        nextStartTimeRef.current += audioBuffer.duration;
+                        sourceNodesRef.current.add(sourceNode);
                     }
-                }
 
-                if (functionResponses.length > 0) {
-                    sessionPromise.then((session) => {
-                        session.sendToolResponse({ functionResponses });
-                    });
-                }
-             }
-
-             // Handle Audio Output from Gemini
-             const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-             
-             if (base64Audio) {
-                setIsSpeaking(true);
-                
-                nextStartTimeRef.current = Math.max(
-                    nextStartTimeRef.current,
-                    outputAudioContext.currentTime
-                );
-
-                const audioBuffer = await decodeAudioData(
-                    decode(base64Audio),
-                    outputAudioContext,
-                    24000,
-                    1
-                );
-
-                const source = outputAudioContext.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(analyser); 
-                analyser.connect(outputAudioContext.destination);
-
-                source.start(nextStartTimeRef.current);
-                nextStartTimeRef.current += audioBuffer.duration;
-                
-                sourcesRef.current.add(source);
-
-                source.onended = () => {
-                    sourcesRef.current.delete(source);
-                    if (sourcesRef.current.size === 0) {
+                    // Handle Interruption
+                    if (message.serverContent?.interrupted) {
+                        sourceNodesRef.current.forEach(node => {
+                            try { node.stop(); } catch(e) {}
+                        });
+                        sourceNodesRef.current.clear();
+                        nextStartTimeRef.current = 0;
                         setIsSpeaking(false);
                     }
-                };
-             }
 
-             const interrupted = message.serverContent?.interrupted;
-             if (interrupted) {
-                 console.log("Model interrupted");
-                 sourcesRef.current.forEach(s => s.stop());
-                 sourcesRef.current.clear();
-                 nextStartTimeRef.current = 0;
-                 setIsSpeaking(false);
-             }
-          },
-          onclose: () => {
-            console.log('Gemini Live Connection Closed');
-            setStatus(LiveStatus.DISCONNECTED);
-          },
-          onerror: (e: any) => {
-            console.error('Gemini Live Error', e);
-            setError(e.message || "Network error. Check API Key or Connection.");
-            setStatus(LiveStatus.ERROR);
-            cleanup();
-          }
-        }
-      });
+                    // Handle Tool Calls
+                    if (message.toolCall) {
+                        for (const fc of message.toolCall.functionCalls) {
+                             if (fc.name === 'bookDemo') {
+                                 const args = fc.args as any;
+                                 const booking: DemoBooking = {
+                                     id: Date.now().toString(),
+                                     scheduledTime: args.scheduledTime || 'Unspecified',
+                                     customerName: args.customerName || 'Jeweller',
+                                     timestamp: new Date().toLocaleString(),
+                                     notes: 'Booked via Gemini AI Agent'
+                                 };
+                                 
+                                 if (onBookingRef.current) onBookingRef.current(booking);
 
-      sessionPromiseRef.current = sessionPromise;
+                                 // Respond to model
+                                 sessionPromise.then(session => {
+                                     session.sendToolResponse({
+                                         functionResponses: {
+                                             id: fc.id,
+                                             name: fc.name,
+                                             response: { result: "Booking confirmed successfully." }
+                                         }
+                                     });
+                                 });
+                             }
+                        }
+                    }
+                },
+                onclose: () => {
+                    disconnect();
+                },
+                onerror: (e) => {
+                    console.error("Gemini Live Error:", e);
+                    setError("Connection interrupted");
+                    disconnect();
+                }
+            }
+        });
 
     } catch (err: any) {
-      console.error("Failed to connect:", err);
-      // Propagate specific error codes
-      setError(err.message || "Failed to initialize connection");
-      setStatus(LiveStatus.ERROR);
-      cleanup();
+        console.error("Connection failed:", err);
+        setError(err.message || "Failed to connect to AI");
+        setStatus(LiveStatus.ERROR);
     }
-  }, [cleanup, visualize]);
-
-  const disconnect = useCallback(() => {
-      cleanup();
-      setStatus(LiveStatus.DISCONNECTED);
-  }, [cleanup]);
+  }, [disconnect, visualize]); // Removed onBooking dependency to rely on ref
 
   useEffect(() => {
-      return () => cleanup();
-  }, [cleanup]);
+      return () => disconnect();
+  }, [disconnect]);
 
   return {
     status,
@@ -333,6 +302,6 @@ export const useGeminiLive = ({ onBooking }: UseGeminiLiveProps = {}): UseGemini
     disconnect,
     isSpeaking,
     audioLevel,
-    error,
+    error
   };
 };
