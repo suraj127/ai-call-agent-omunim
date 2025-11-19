@@ -1,3 +1,4 @@
+
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality, Type } from "@google/genai";
 import { SYSTEM_INSTRUCTION } from '../constants';
@@ -191,7 +192,7 @@ export const useGeminiLive = ({ onBooking }: UseGeminiLiveProps = {}): UseGemini
                 responseModalities: [Modality.AUDIO],
                 systemInstruction: SYSTEM_INSTRUCTION,
                 speechConfig: {
-                    voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } }
+                    voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Fenrir' } }
                 },
                 tools: [bookDemoTool]
             },
