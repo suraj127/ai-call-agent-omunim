@@ -60,31 +60,12 @@ const App: React.FC = () => {
 
   // --- Callback for when Agent books a demo ---
   const handleBooking = useCallback((newBooking: DemoBooking) => {
-      // Enrich booking with lead data
-      // Note: Since this callback is stable, we use functional state update to access latest bookings,
-      // but for activeLead we rely on the booking data passed from the tool or ref if needed.
-      // To keep it simple and avoid closing over stale 'activeLead', the hook passes what it knows.
-      // If we need activeLead info, we can grab it from current state if we include it in deps, 
-      // but to keep 'connect' stable we avoid changing deps. 
-      // Strategy: The booking object from the hook already has customerName if the model extracted it.
-      // If we want to force the active lead name, we can do it here but we need to be careful about deps.
-      
       setBookings(prev => {
           const updated = [newBooking, ...prev];
           localStorage.setItem('om_bookings', JSON.stringify(updated));
           return updated;
       });
 
-      // We need to know which lead ID to update. 
-      // Since we can't easily pass ID through the voice tool unless we add it to context,
-      // we'll trust the user is on the active lead page.
-      // To access 'activeLeadId' without breaking stability, we can use a ref or just accept that
-      // if activeLeadId changes, the callback changes, and we reconnect.
-      // For now, let's allow the callback to change when activeLeadId changes. 
-      // The hook handles ref updates so it won't break connection.
-      
-      // Actually, looking at useGeminiLive implementation, it uses a Ref for onBooking.
-      // So we can safely depend on activeLeadId here without breaking the socket.
       if (activeLeadId) {
           setLeads(prev => {
               const updated = prev.map(l => {
@@ -95,7 +76,7 @@ const App: React.FC = () => {
               return updated;
           });
       }
-  }, [activeLeadId]); // This dependency is safe because useGeminiLive wraps this in a Ref.
+  }, [activeLeadId]); 
 
   const { status, connect, disconnect, isSpeaking, audioLevel, error } = useGeminiLive({
       onBooking: handleBooking
@@ -325,22 +306,22 @@ const App: React.FC = () => {
 
                 {/* STEP 2 */}
                 <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
-                    <div className="text-xs text-slate-500 uppercase font-bold mb-3 tracking-wider">Step 2: Start Agent</div>
+                    <div className="text-xs text-slate-500 uppercase font-bold mb-3 tracking-wider">Step 2: Start AI</div>
                     
                     {status === LiveStatus.CONNECTED || status === LiveStatus.CONNECTING ? (
                         <button 
                           onClick={disconnect}
                           className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-4 rounded-lg shadow-lg flex flex-col items-center justify-center gap-2 active:scale-95 transition-transform"
                         >
-                          <span>Stop Agent</span>
-                          <span className="text-[10px] font-normal opacity-80">Tap to end conversation</span>
+                          <span>End Conversation</span>
+                          <span className="text-[10px] font-normal opacity-80">Disconnect Gemini Live</span>
                         </button>
                     ) : (
                         <button 
                           onClick={handleStartAI}
                           className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-bold py-4 rounded-lg shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95"
                         >
-                           <MicIcon /> Connect AI Agent
+                           <MicIcon /> Start Live Conversation
                         </button>
                     )}
 
@@ -353,7 +334,7 @@ const App: React.FC = () => {
                     </div>
                     <div className="text-center text-xs text-slate-400 mt-[-10px] h-4">
                         {status === LiveStatus.CONNECTING && "Connecting to Gemini Live..."}
-                        {status === LiveStatus.CONNECTED && (isSpeaking ? "Agent Speaking..." : "Listening...")}
+                        {status === LiveStatus.CONNECTED && (isSpeaking ? "Online Munim Speaking..." : "Listening...")}
                     </div>
                 </div>
 
@@ -373,8 +354,8 @@ const App: React.FC = () => {
              <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
                 <PhoneIcon />
              </div>
-             <h3 className="text-xl font-semibold text-slate-300 mb-2">Offline Sales Agent</h3>
-             <p className="max-w-xs mx-auto text-sm">Select a lead from the sidebar to start the automated script workflow.</p>
+             <h3 className="text-xl font-semibold text-slate-300 mb-2">Online Munim AI</h3>
+             <p className="max-w-xs mx-auto text-sm">Select a lead from the sidebar to start a live conversation.</p>
           </div>
         )}
 
