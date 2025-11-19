@@ -1,0 +1,7 @@
+{
+  "name": "Copy of Online Munim AI Agent",
+  "description": "A voice-based AI sales agent for Online Munim Jewellery Software using Gemini Live API.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
