@@ -1,6 +1,7 @@
+
 // Utility to convert base64 string to raw bytes
 export function decode(base64: string): Uint8Array {
-  const cleanBase64 = base64.replace(/\s/g, ''); // Remove any whitespace
+  const cleanBase64 = base64.replace(/\s/g, '');
   const binaryString = atob(cleanBase64);
   const len = binaryString.length;
   const bytes = new Uint8Array(len);
@@ -41,17 +42,40 @@ export async function decodeAudioData(
   return buffer;
 }
 
-// Helper to create a blob for sending to Gemini
-export function createBlob(data: Float32Array): { data: string; mimeType: string } {
-  const l = data.length;
-  const int16 = new Int16Array(l);
-  for (let i = 0; i < l; i++) {
-    // Convert Float32 [-1.0, 1.0] back to 16-bit PCM
-    let s = Math.max(-1, Math.min(1, data[i]));
-    int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-  }
-  return {
-    data: encode(new Uint8Array(int16.buffer)),
-    mimeType: 'audio/pcm;rate=16000',
-  };
+/**
+ * Downsamples input audio buffer to 16kHz and converts to Int16 PCM.
+ * Gemini requires 16kHz Little Endian PCM.
+ */
+export function pcmTo16k(input: Float32Array, inputSampleRate: number): { data: string; mimeType: string } {
+    let pcm16: Int16Array;
+
+    if (inputSampleRate === 16000) {
+        // No resampling needed
+        pcm16 = new Int16Array(input.length);
+        for (let i = 0; i < input.length; i++) {
+            let s = Math.max(-1, Math.min(1, input[i]));
+            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+    } else {
+        // Simple Linear Interpolation Downsampling
+        const ratio = inputSampleRate / 16000;
+        const newLength = Math.ceil(input.length / ratio);
+        pcm16 = new Int16Array(newLength);
+        
+        for (let i = 0; i < newLength; i++) {
+            const offset = i * ratio;
+            const index = Math.floor(offset);
+            const nextIndex = Math.min(input.length - 1, Math.ceil(offset));
+            const weight = offset - index;
+            
+            let val = input[index] * (1 - weight) + input[nextIndex] * weight;
+            val = Math.max(-1, Math.min(1, val));
+            pcm16[i] = val < 0 ? val * 0x8000 : val * 0x7FFF;
+        }
+    }
+
+    return {
+        data: encode(new Uint8Array(pcm16.buffer)),
+        mimeType: 'audio/pcm;rate=16000',
+    };
 }

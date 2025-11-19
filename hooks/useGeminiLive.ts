@@ -1,8 +1,7 @@
-
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality, Type } from "@google/genai";
 import { SYSTEM_INSTRUCTION } from '../constants';
-import { createBlob, decodeAudioData, decode } from '../utils/audioUtils';
+import { pcmTo16k, decodeAudioData, decode } from '../utils/audioUtils';
 
 export enum LiveStatus {
   DISCONNECTED = 'disconnected',
@@ -62,7 +61,9 @@ export const useGeminiLive = ({ onBooking }: UseGeminiLiveProps = {}): UseGemini
 
     // 2. Stop Processor
     if (processorRef.current) {
-        processorRef.current.disconnect();
+        try {
+            processorRef.current.disconnect();
+        } catch (e) {}
         processorRef.current = null;
     }
 
@@ -80,7 +81,9 @@ export const useGeminiLive = ({ onBooking }: UseGeminiLiveProps = {}): UseGemini
 
     // 5. Close Audio Context
     if (audioContextRef.current) {
-        try { audioContextRef.current.close(); } catch(e) {}
+        if (audioContextRef.current.state !== 'closed') {
+            try { audioContextRef.current.close(); } catch(e) {}
+        }
         audioContextRef.current = null;
     }
 
@@ -122,7 +125,6 @@ export const useGeminiLive = ({ onBooking }: UseGeminiLiveProps = {}): UseGemini
   }, [status, visualize]);
 
   const connect = useCallback(async () => {
-    // Prevent multiple calls
     if (status === LiveStatus.CONNECTING || status === LiveStatus.CONNECTED) return;
 
     setStatus(LiveStatus.CONNECTING);
@@ -131,15 +133,28 @@ export const useGeminiLive = ({ onBooking }: UseGeminiLiveProps = {}): UseGemini
     try {
         // 1. Initialize Audio Context
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        const audioContext = new AudioContextClass({ sampleRate: 16000 }); 
-        await audioContext.resume();
-        audioContextRef.current = audioContext;
+        const audioContext = new AudioContextClass(); 
         
-        const outputAudioContext = new AudioContextClass({ sampleRate: 24000 });
-        await outputAudioContext.resume();
+        // Explicitly resume - critical for mobile browsers after backgrounding
+        if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+        }
+        
+        audioContextRef.current = audioContext;
+        const sampleRate = audioContext.sampleRate;
         
         // 2. Get User Media (Mic)
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Note: On iOS/Android, if the app is backgrounded (dialer opens), this stream might pause.
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+                // Requesting low latency mode if available
+                // @ts-ignore
+                latency: 0
+            } 
+        });
         streamRef.current = stream;
 
         // Visualizer Setup
@@ -151,7 +166,7 @@ export const useGeminiLive = ({ onBooking }: UseGeminiLiveProps = {}): UseGemini
         source.connect(analyser);
 
         // 3. Connect to Gemini Live API
-        const apiKey = "AIzaSyCPpq0DbrvMRG8h2YotctMeVEdFsmUfM-U"; // Using provided key
+        const apiKey = process.env.API_KEY || "AIzaSyCPpq0DbrvMRG8h2YotctMeVEdFsmUfM-U"; 
         
         const ai = new GoogleGenAI({ apiKey });
         
@@ -184,51 +199,52 @@ export const useGeminiLive = ({ onBooking }: UseGeminiLiveProps = {}): UseGemini
                 onopen: () => {
                     setStatus(LiveStatus.CONNECTED);
                     
-                    // Setup Audio Processing
-                    const scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+                    // Low latency buffer size (2048 instead of 4096)
+                    // 2048 frames @ 48kHz ~= 42ms latency
+                    const scriptProcessor = audioContext.createScriptProcessor(2048, 1, 1);
                     processorRef.current = scriptProcessor;
 
                     scriptProcessor.onaudioprocess = (e) => {
+                        // Check if we are still connected before processing
+                        if (!audioContextRef.current || audioContextRef.current.state === 'closed') return;
+
                         const inputData = e.inputBuffer.getChannelData(0);
-                        const pcmBlob = createBlob(inputData);
+                        const pcmBlob = pcmTo16k(inputData, sampleRate);
                         
                         sessionPromise.then(session => {
                             session.sendRealtimeInput({ media: pcmBlob });
                         }).catch(err => {
-                            // Prevent unhandled rejection loop if session drops
+                            // If socket sends fail, connection is likely dead
+                            console.warn("Socket send failed", err);
                         });
                     };
                     
                     source.connect(scriptProcessor);
                     scriptProcessor.connect(audioContext.destination);
-
-                    // Wake up model with initial silence
-                    setTimeout(() => {
-                        sessionPromise.then(session => {
-                             const silence = new Float32Array(1600);
-                             const pcmBlob = createBlob(silence);
-                             session.sendRealtimeInput({ media: pcmBlob });
-                        }).catch(() => {});
-                    }, 500);
                 },
                 onmessage: async (message: LiveServerMessage) => {
                     // Audio Output
                     const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
                     if (base64Audio) {
                         setIsSpeaking(true);
-                        nextStartTimeRef.current = Math.max(nextStartTimeRef.current, outputAudioContext.currentTime);
+                        
+                        if (!audioContextRef.current) return;
+                        
+                        if (nextStartTimeRef.current < audioContext.currentTime) {
+                             nextStartTimeRef.current = audioContext.currentTime;
+                        }
 
                         try {
                             const audioBuffer = await decodeAudioData(
                                 decode(base64Audio),
-                                outputAudioContext,
-                                24000,
+                                audioContext,
+                                sampleRate, 
                                 1
                             );
 
-                            const sourceNode = outputAudioContext.createBufferSource();
+                            const sourceNode = audioContext.createBufferSource();
                             sourceNode.buffer = audioBuffer;
-                            sourceNode.connect(outputAudioContext.destination);
+                            sourceNode.connect(audioContext.destination);
                             
                             sourceNode.onended = () => {
                                 sourceNodesRef.current.delete(sourceNode);
@@ -251,7 +267,7 @@ export const useGeminiLive = ({ onBooking }: UseGeminiLiveProps = {}): UseGemini
                             try { node.stop(); } catch(e) {}
                         });
                         sourceNodesRef.current.clear();
-                        nextStartTimeRef.current = 0;
+                        if(audioContextRef.current) nextStartTimeRef.current = audioContext.currentTime;
                         setIsSpeaking(false);
                     }
 
@@ -289,22 +305,21 @@ export const useGeminiLive = ({ onBooking }: UseGeminiLiveProps = {}): UseGemini
                 },
                 onerror: (e) => {
                     console.error("Gemini Live Error:", e);
-                    setError("Network or API Error");
+                    setError("Connection Lost. Resume manually.");
                     disconnect();
                 }
             }
         });
         
-        // Wait for connection to establish to catch immediate errors
         await sessionPromise;
 
     } catch (err: any) {
         console.error("Connection failed:", err);
-        setError(err.message || "Failed to connect");
+        setError("Check Mic/Network");
         setStatus(LiveStatus.ERROR);
         disconnect();
     }
-  }, [disconnect, visualize]); 
+  }, [disconnect, visualize, status]); 
 
   // Cleanup on unmount
   useEffect(() => {

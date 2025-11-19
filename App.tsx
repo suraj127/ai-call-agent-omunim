@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useGeminiLive, LiveStatus, DemoBooking } from './hooks/useGeminiLive';
 import Visualizer from './components/Visualizer';
 
@@ -13,7 +13,6 @@ interface Lead {
 
 // --- Icons ---
 const PhoneIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M1.5 4.5a3 3 0 0 1 3-3h1.372c.86 0 1.61.586 1.819 1.42l1.105 4.423a1.875 1.875 0 0 1-.694 1.955l-1.293.97c-.135.101-.164.249-.126.352a11.285 11.285 0 0 0 6.697 6.697c.103.038.25.009.352-.126l.97-1.293a1.875 1.875 0 0 1 1.955-.694l4.423 1.105c.834.209 1.42.959 1.42 1.82V19.5a3 3 0 0 1-3 3h-2.25C8.552 22.5 1.5 15.448 1.5 5.25V4.5Z" clipRule="evenodd" /></svg>;
-const MicIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M8.25 4.5a3.75 3.75 0 1 1 7.5 0v8.25a3.75 3.75 0 1 1-7.5 0V4.5Z" /><path d="M6 10.5a.75.75 0 0 1 .75.75v1.5a5.25 5.25 0 1 0 10.5 0v-1.5a.75.75 0 0 1 1.5 0v1.5a6.751 6.751 0 0 1-6 6.709v2.291h3a.75.75 0 0 1 0 1.5h-7.5a.75.75 0 0 1 0-1.5h3v-2.291a6.751 6.751 0 0 1-6-6.709v-1.5A.75.75 0 0 1 6 10.5Z" /></svg>;
 const CheckIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-9.75 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 0 0-1.06 1.06l2.25 2.25a.75.75 0 0 0 1.14-.094l3.75-5.25Z" clipRule="evenodd" /></svg>;
 const UserPlusIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M6.25 6.375a4.125 4.125 0 1 1 8.25 0 4.125 4.125 0 0 1-8.25 0ZM3.25 19.125a7.125 7.125 0 0 1 14.25 0v.003l-.001.119a.75.75 0 0 1-.363.63 13.067 13.067 0 0 1-6.761 1.873c-2.472 0-4.786-.684-6.76-1.873a.75.75 0 0 1-.364-.63l-.001-.122ZM19.75 7.5a.75.75 0 0 0-1.5 0v2.25H16a.75.75 0 0 0 0 1.5h2.25v2.25a.75.75 0 0 0 1.5 0v-2.25H22a.75.75 0 0 0 0-1.5h-2.25V7.5Z" /></svg>;
 const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path fillRule="evenodd" d="M11.03 3.97a.75.75 0 0 1 0 1.06l-6.22 6.22H21a.75.75 0 0 1 0 1.5H4.81l6.22 6.22a.75.75 0 1 1-1.06 1.06l-7.5-7.5a.75.75 0 0 1 0-1.06l7.5-7.5a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" /></svg>;
@@ -21,6 +20,7 @@ const TrashIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 
 const CalendarIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M6.75 2.25a.75.75 0 0 1 .75.75v1.5h9v-1.5a.75.75 0 0 1 1.5 0v1.5h.75a3 3 0 0 1 3 3v2.5h-18v-2.5a3 3 0 0 1 3-3h.75v-1.5a.75.75 0 0 1 .75-.75ZM1.5 11.25v7.5a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3v-7.5H1.5Zm4.5 3a.75.75 0 0 1 .75.75v.005a.75.75 0 0 1-1.5 0v-.005a.75.75 0 0 1 .75-.75Zm3.75 0a.75.75 0 0 1 .75.75v.005a.75.75 0 0 1-1.5 0v-.005a.75.75 0 0 1 .75-.75Zm3.75 0a.75.75 0 0 1 .75.75v.005a.75.75 0 0 1-1.5 0v-.005a.75.75 0 0 1 .75-.75Zm3.75 0a.75.75 0 0 1 .75.75v.005a.75.75 0 0 1-1.5 0v-.005a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" /></svg>;
 const XMarkIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>;
 const DownloadIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75Zm-9 13.5a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h13.5a1.5 1.5 0 0 0 1.5-1.5V16.5a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3H5.25a3 3 0 0 1-3-3V16.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" /></svg>;
+const ReloadIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M4.755 10.059a7.5 7.5 0 0 1 12.548-3.364l1.903 1.903h-3.183a.75.75 0 1 0 0 1.5h5.5a.75.75 0 0 0 .75-.75v-5.5a.75.75 0 0 0-1.5 0v3.183l-1.903-1.903a9 9 0 0 0-15.36 4.118c-1.903.691 1.423.75 0 1 1 .527 1.255.247.75.75 0 1 0 1.498-.314ZM19.245 13.941a7.5 7.5 0 0 1-12.548 3.364l-1.903-1.903h3.183a.75.75 0 1 0 0-1.5h-5.5a.75.75 0 0 0-.75.75v5.5a.75.75 0 0 0 1.5 0v-3.183l1.903 1.903a9 9 0 0 0 15.36-4.118c1.903-.691 1.423-.75 0-1 1-.527-1.255-.247-.75-.75 0 1 0-1.498.314Z" clipRule="evenodd" /></svg>;
 
 const App: React.FC = () => {
   // --- State ---
@@ -38,6 +38,7 @@ const App: React.FC = () => {
   const [newLeadPhone, setNewLeadPhone] = useState('');
   const [showAddLead, setShowAddLead] = useState(false);
   const [showBookingsModal, setShowBookingsModal] = useState(false);
+  const [dialerOpen, setDialerOpen] = useState(false);
   
   // PWA Install Prompt State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -124,17 +125,34 @@ const App: React.FC = () => {
       }
   };
 
-  const handleStartAI = () => {
+  // Optimized Auto-Call Flow
+  const handleAutoCall = async () => {
     if (!activeLead) return;
-    if (status !== LiveStatus.DISCONNECTED) {
-        disconnect();
+    
+    // 1. Connect AI First (Requires user gesture, which this click provides)
+    if (status === LiveStatus.DISCONNECTED || status === LiveStatus.ERROR) {
+        try {
+            await connect();
+        } catch (e) {
+            console.error("Failed to connect before dialing", e);
+            alert("AI Connection failed. Check internet.");
+            return;
+        }
     }
-    // Start immediately
-    connect();
+
+    // 2. Wait a tiny bit for connection to stabilize, then Dial
+    setDialerOpen(true);
+    
+    // Use a small timeout to allow the UI to update to "Live" state
+    // before the native dialer takes over the screen
+    setTimeout(() => {
+        window.location.href = `tel:${activeLead.phone}`;
+    }, 1500);
   };
 
   const handleNextLead = () => {
     disconnect();
+    setDialerOpen(false);
     if (activeLeadId) {
         const currentIndex = leads.findIndex(l => l.id === activeLeadId);
         if (currentIndex < leads.length - 1) {
@@ -273,6 +291,7 @@ const App: React.FC = () => {
                 onClick={() => {
                     disconnect();
                     setActiveLeadId(null);
+                    setDialerOpen(false);
                 }} 
                 className="md:hidden absolute top-4 left-4 p-2 bg-slate-800/80 backdrop-blur rounded-full text-slate-300 z-50 border border-slate-700 shadow-lg"
             >
@@ -292,50 +311,84 @@ const App: React.FC = () => {
              </div>
 
              <div className="space-y-5 md:space-y-6">
-                {/* STEP 1 */}
-                <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
-                    <div className="text-xs text-slate-500 uppercase font-bold mb-3 tracking-wider">Step 1: Dial & Speaker</div>
-                    <a 
-                      href={`tel:${activeLead.phone}`}
-                      className="flex items-center justify-center gap-3 w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 md:py-3 rounded-lg shadow-lg transition-transform active:scale-95 hover:scale-105"
-                    >
-                      <PhoneIcon /> Call via SIM
-                    </a>
-                    <p className="text-[10px] text-slate-500 mt-2">Tap to open phone dialer. <span className="text-yellow-500 font-bold">Put call on Speaker.</span></p>
-                </div>
-
-                {/* STEP 2 */}
-                <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
-                    <div className="text-xs text-slate-500 uppercase font-bold mb-3 tracking-wider">Step 2: Start AI</div>
+                
+                {/* UNIFIED CALLING CARD */}
+                <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700/50 shadow-xl">
                     
                     {status === LiveStatus.CONNECTED || status === LiveStatus.CONNECTING ? (
-                        <button 
-                          onClick={disconnect}
-                          className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-4 rounded-lg shadow-lg flex flex-col items-center justify-center gap-2 active:scale-95 transition-transform"
-                        >
-                          <span>End Conversation</span>
-                          <span className="text-[10px] font-normal opacity-80">Disconnect Gemini Live</span>
-                        </button>
-                    ) : (
-                        <button 
-                          onClick={handleStartAI}
-                          className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-bold py-4 rounded-lg shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95"
-                        >
-                           <MicIcon /> Start Live Conversation
-                        </button>
-                    )}
+                        <div className="animate-in fade-in duration-300">
+                            <div className="flex items-center justify-center gap-2 mb-4">
+                                <span className="relative flex h-3 w-3">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                                </span>
+                                <span className="text-red-400 font-bold tracking-wide">AI LISTENING & SPEAKING</span>
+                            </div>
 
-                    <div className="h-24 mt-4 flex items-center justify-center">
-                        <Visualizer 
-                          isActive={status === LiveStatus.CONNECTED} 
-                          level={audioLevel} 
-                          color={isSpeaking ? '#EAB308' : '#3B82F6'} 
-                        />
-                    </div>
-                    <div className="text-center text-xs text-slate-400 mt-[-10px] h-4">
-                        {status === LiveStatus.CONNECTING && "Connecting to Gemini Live..."}
-                        {status === LiveStatus.CONNECTED && (isSpeaking ? "Online Munim Speaking..." : "Listening...")}
-                    </div>
+                            <div className="h-32 flex items-center justify-center mb-4 relative">
+                                <Visualizer 
+                                  isActive={status === LiveStatus.CONNECTED} 
+                                  level={audioLevel} 
+                                  color={isSpeaking ? '#EAB308' : '#3B82F6'} 
+                                />
+                                {dialerOpen && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[1px] rounded-lg">
+                                        <p className="text-xs font-bold text-white bg-black/50 px-2 py-1 rounded">Return to App to see Viz</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex gap-2">
+                                <button 
+                                  onClick={disconnect}
+                                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-transform"
+                                >
+                                  <XMarkIcon /> End AI
+                                </button>
+                                {/* Reconnect button in case backgrounding killed it */}
+                                <button 
+                                  onClick={connect}
+                                  className="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-3 rounded-lg shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-transform"
+                                  title="Click if audio stops"
+                                >
+                                   <ReloadIcon /> Resume AI
+                                </button>
+                            </div>
+                            
+                            {dialerOpen && (
+                                <div className="mt-3 p-2 bg-blue-500/10 border border-blue-500/30 rounded text-center">
+                                    <p className="text-xs text-blue-200">
+                                        Currently Dialing. Ensure phone is on <span className="font-bold text-white">SPEAKER</span>.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="animate-in fade-in duration-300">
+                             <div className="text-xs text-slate-500 uppercase font-bold mb-4 tracking-wider">Auto-Dialer Ready</div>
+                             <button 
+                              onClick={handleAutoCall}
+                              className="w-full bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 text-white font-bold py-5 rounded-xl shadow-lg flex flex-col items-center justify-center gap-1 transition-all active:scale-95 border-b-4 border-green-800"
+                            >
+                               <div className="flex items-center gap-2 text-lg">
+                                  <PhoneIcon /> <span>START CALL</span>
+                               </div>
+                               <span className="text-[10px] font-normal opacity-90 bg-black/20 px-2 py-0.5 rounded-full">AI Connects + Opens Dialer</span>
+                            </button>
+
+                            <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded text-left space-y-2">
+                                <p className="text-[11px] text-yellow-500/80 leading-tight">
+                                    1. App will connect to AI first.
+                                </p>
+                                <p className="text-[11px] text-yellow-500/80 leading-tight">
+                                    2. Phone Dialer will open. <span className="text-white font-bold">Select your SIM</span> manually.
+                                </p>
+                                <p className="text-[11px] text-yellow-500/80 leading-tight">
+                                    3. Put call on <span className="font-bold text-yellow-500">SPEAKER</span> immediately.
+                                </p>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <div className="flex gap-3 mt-6">
