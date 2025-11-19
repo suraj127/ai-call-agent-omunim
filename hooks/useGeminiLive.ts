@@ -137,10 +137,10 @@ export const useGeminiLive = ({ onBooking }: UseGeminiLiveProps = {}): UseGemini
         source.connect(analyser); // Connect mic to analyser
 
         // 3. Connect to Gemini Live API
-        // Safely access process.env to avoid crashes in strict browser environments
-        const apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
+        const apiKey = "AIzaSyCPpq0DbrvMRG8h2YotctMeVEdFsmUfM-U";
+        
         if (!apiKey) {
-            throw new Error("API_KEY not found in environment");
+            throw new Error("API_KEY not found");
         }
 
         const ai = new GoogleGenAI({ apiKey });
