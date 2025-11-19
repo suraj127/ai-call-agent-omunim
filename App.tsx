@@ -20,6 +20,7 @@ const ArrowLeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0
 const TrashIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M16.5 4.478v.227a48.816 48.816 0 0 1 3.878.512.75.75 0 1 1-.256 1.478l-.209-.035-1.005 13.07a3 3 0 0 1-2.991 2.77H8.084a3 3 0 0 1-2.991-2.77L4.087 6.66l-.209.035a.75.75 0 0 1-.256-1.478A48.567 48.567 0 0 1 7.5 4.705v-.227c0-1.564 1.213-2.9 2.816-2.951a52.662 52.662 0 0 1 3.369 0c1.603.051 2.815 1.387 2.815 2.951Zm-6.136-1.452a51.196 51.196 0 0 1 3.273 0C14.39 3.05 15 3.684 15 4.478v.113a49.488 49.488 0 0 0-6 0v-.113c0-.794.609-1.428 1.636-1.452ZM12.9 8.17a.75.75 0 0 1 .75.75v6.546a.75.75 0 0 1-1.5 0V8.92a.75.75 0 0 1 .75-.75Zm-3.8 0a.75.75 0 0 1 .75.75v6.546a.75.75 0 0 1-1.5 0V8.92a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" /></svg>;
 const CalendarIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M6.75 2.25a.75.75 0 0 1 .75.75v1.5h9v-1.5a.75.75 0 0 1 1.5 0v1.5h.75a3 3 0 0 1 3 3v2.5h-18v-2.5a3 3 0 0 1 3-3h.75v-1.5a.75.75 0 0 1 .75-.75ZM1.5 11.25v7.5a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3v-7.5H1.5Zm4.5 3a.75.75 0 0 1 .75.75v.005a.75.75 0 0 1-1.5 0v-.005a.75.75 0 0 1 .75-.75Zm3.75 0a.75.75 0 0 1 .75.75v.005a.75.75 0 0 1-1.5 0v-.005a.75.75 0 0 1 .75-.75Zm3.75 0a.75.75 0 0 1 .75.75v.005a.75.75 0 0 1-1.5 0v-.005a.75.75 0 0 1 .75-.75Zm3.75 0a.75.75 0 0 1 .75.75v.005a.75.75 0 0 1-1.5 0v-.005a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" /></svg>;
 const XMarkIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>;
+const DownloadIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75Zm-9 13.5a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h13.5a1.5 1.5 0 0 0 1.5-1.5V16.5a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3H5.25a3 3 0 0 1-3-3V16.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" /></svg>;
 
 const App: React.FC = () => {
   // --- State ---
@@ -37,8 +38,27 @@ const App: React.FC = () => {
   const [newLeadPhone, setNewLeadPhone] = useState('');
   const [showAddLead, setShowAddLead] = useState(false);
   const [showBookingsModal, setShowBookingsModal] = useState(false);
+  
+  // PWA Install Prompt State
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   const activeLead = leads.find(l => l.id === activeLeadId);
+
+  // --- Effects ---
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      // Prevent the mini-infobar from appearing on mobile
+      e.preventDefault();
+      // Stash the event so it can be triggered later.
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
 
   // --- Callback for when AI books a demo ---
   const handleBooking = (newBooking: DemoBooking) => {
@@ -141,6 +161,15 @@ const App: React.FC = () => {
       }
   }
 
+  const handleInstallApp = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-slate-900 text-slate-50 flex flex-col md:flex-row overflow-hidden">
       
@@ -157,6 +186,12 @@ const App: React.FC = () => {
                Lead List
              </h2>
              <div className="flex gap-1">
+                {/* PWA Install Button */}
+                {deferredPrompt && (
+                    <button type="button" onClick={handleInstallApp} className="text-slate-400 hover:text-yellow-400 p-2 rounded-full hover:bg-slate-800 animate-pulse" title="Install App">
+                        <DownloadIcon />
+                    </button>
+                )}
                 <button type="button" onClick={() => setShowBookingsModal(true)} className="text-slate-400 hover:text-green-400 p-2 rounded-full hover:bg-slate-800 relative" title="View Bookings">
                     <CalendarIcon />
                     {bookings.length > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-green-500 rounded-full"></span>}
