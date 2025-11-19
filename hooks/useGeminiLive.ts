@@ -38,10 +38,15 @@ interface UseGeminiLiveReturn {
 // Helper to safely get API Key
 const getApiKey = () => {
   try {
-    return process.env.API_KEY;
+    // Priority 1: Environment Variable (Best Practice for Production)
+    if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+      return process.env.API_KEY;
+    }
   } catch (e) {
-    return null;
+    // Ignore env errors
   }
+  // Priority 2: Fallback to user-provided key for immediate demo use
+  return "AIzaSyCPpq0DbrvMRG8h2YotctMeVEdFsmUfM-U";
 };
 
 export const useGeminiLive = ({ onBooking }: UseGeminiLiveProps = {}): UseGeminiLiveReturn => {
@@ -131,7 +136,8 @@ export const useGeminiLive = ({ onBooking }: UseGeminiLiveProps = {}): UseGemini
 
       const apiKey = getApiKey();
       if (!apiKey) {
-         throw new Error("API Key is missing. Please check your environment variables.");
+         // Return a specific error code that App.tsx can detect to show instructions
+         throw new Error("API_KEY_MISSING");
       }
 
       const ai = new GoogleGenAI({ apiKey });
@@ -305,6 +311,7 @@ export const useGeminiLive = ({ onBooking }: UseGeminiLiveProps = {}): UseGemini
 
     } catch (err: any) {
       console.error("Failed to connect:", err);
+      // Propagate specific error codes
       setError(err.message || "Failed to initialize connection");
       setStatus(LiveStatus.ERROR);
       cleanup();

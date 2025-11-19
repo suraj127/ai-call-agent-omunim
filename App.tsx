@@ -21,6 +21,7 @@ const TrashIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 
 const CalendarIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M6.75 2.25a.75.75 0 0 1 .75.75v1.5h9v-1.5a.75.75 0 0 1 1.5 0v1.5h.75a3 3 0 0 1 3 3v2.5h-18v-2.5a3 3 0 0 1 3-3h.75v-1.5a.75.75 0 0 1 .75-.75ZM1.5 11.25v7.5a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3v-7.5H1.5Zm4.5 3a.75.75 0 0 1 .75.75v.005a.75.75 0 0 1-1.5 0v-.005a.75.75 0 0 1 .75-.75Zm3.75 0a.75.75 0 0 1 .75.75v.005a.75.75 0 0 1-1.5 0v-.005a.75.75 0 0 1 .75-.75Zm3.75 0a.75.75 0 0 1 .75.75v.005a.75.75 0 0 1-1.5 0v-.005a.75.75 0 0 1 .75-.75Zm3.75 0a.75.75 0 0 1 .75.75v.005a.75.75 0 0 1-1.5 0v-.005a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" /></svg>;
 const XMarkIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>;
 const DownloadIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75Zm-9 13.5a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h13.5a1.5 1.5 0 0 0 1.5-1.5V16.5a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3H5.25a3 3 0 0 1-3-3V16.5a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" /></svg>;
+const AlertIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-red-500"><path fillRule="evenodd" d="M9.401 3.003c1.155-2 4.043-2 5.197 0l7.355 12.748c1.154 2-.29 4.5-2.599 4.5H4.645c-2.309 0-3.752-2.5-2.598-4.5L9.4 3.003ZM12 8.25a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V9a.75.75 0 0 1 .75-.75Zm0 8.25a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" clipRule="evenodd" /></svg>;
 
 const App: React.FC = () => {
   // --- State ---
@@ -368,10 +369,38 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Error Toast */}
-        {error && (
+        {/* Error Toast (Generic) */}
+        {error && error !== 'API_KEY_MISSING' && (
           <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-6 py-3 rounded-full shadow-lg text-sm font-bold animate-bounce w-max max-w-[90%] text-center z-50">
             {error}
+          </div>
+        )}
+        
+        {/* API Key Error Modal */}
+        {error === 'API_KEY_MISSING' && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur">
+             <div className="bg-slate-900 border border-red-500/50 w-full max-w-md rounded-xl shadow-2xl p-6 text-center">
+                <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                   <AlertIcon />
+                </div>
+                <h2 className="text-xl font-bold text-white mb-2">Setup Required</h2>
+                <p className="text-slate-400 text-sm mb-6">
+                  The AI Agent needs a valid Google Gemini API Key to function.
+                </p>
+                
+                <div className="bg-slate-800 p-4 rounded text-left text-xs text-slate-300 space-y-2 mb-6">
+                   <p className="font-bold text-white">How to fix on Vercel:</p>
+                   <ol className="list-decimal list-inside space-y-1">
+                     <li>Go to your Vercel Dashboard</li>
+                     <li>Select this project</li>
+                     <li>Go to <strong>Settings</strong> &gt; <strong>Environment Variables</strong></li>
+                     <li>Add Key: <code className="text-yellow-500">API_KEY</code></li>
+                     <li>Add Value: <em>Your Gemini API Key</em></li>
+                     <li>Redeploy the app</li>
+                   </ol>
+                </div>
+                <button onClick={() => window.location.reload()} className="bg-slate-700 hover:bg-slate-600 text-white py-2 px-6 rounded-full text-sm font-bold">Refresh App</button>
+             </div>
           </div>
         )}
 
